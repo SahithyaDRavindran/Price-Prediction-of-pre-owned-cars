@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Dec 17 12:15:32 2020
+
+@author: sahithya
+"""
+
+######predicting the price of pre-owned cars#######
+import pandas as pd       #for dataframe operations
+
+import numpy as np        #for numerical operations
+
+import seaborn as sns     # for visualizations
+
+#setting dimensions for all the plot
+sns.set(rc={'figure.figsize':(11.7,8.27)})
+
+#importing the dataset
+cars_dt = pd.read_csv('cars_data.csv')
+
+#creating a copy of the dataset
+cars = cars_dt.copy()
+
+#structure of the dataset
+cars.info()
+cars.dtypes #gives datatype alone
+
+#summarise the data
+cars.describe()     #once we do this, we can see for some attributes, results are like ... and also floating point precisions are to more digits.
+                    #To reduce that we use ".set_option" function.
+pd.set_option('display.float_format', lambda x: '%.3f' % x)
+
+pd.set_option('display.max_columns',500)  #this code is for to display all the columns. Here 500 indicates the number of cols it should display though there won't be much columns.
+
+#inference from summarization
+#for price variable.
+#   1. we can infer that price is available for all the 50,001 observations.
+#   2. Standard deviation is large with a value of 85818.470.
+#   3. Minimum value is 0 and the first quartil, second quartile values are present.
+#   4. we can see that mean and median which is 50% values differ a lot from each other and infer that the variable price is skewed.
+
+#year of registration
+    #1. We can see that the mean for this variable is in the form of float as 2005.544 but year cannot be in float.
+    
+#month of registration
+#    1. Minimum cannot be zero for month.
+#postal code
+#    1. the values should be integers and not decimal.
+    
+#dropping unwanted columns
+ col = ['name','dateCrawled','dateCreated','postalCode','lastSeen']
+ cars = cars.drop(columns = col,axis = 1)
+ 
+#removing duplicate records    if any duplicate records found, we will keep the first occurence of such records.
+ cars.drop_duplicates(keep = 'first',inplace = True) #now only 49531 records are present
+ 
+ #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@  DATA CLEANING  @@@@@@@@@@@@@@@@@@@@@@@@@
+ 
+ #check the missing values
+ cars.isnull().sum()
+ 
+ #variable year of registration
+ yearwise_count = cars['yearOfRegistration'].value_counts().sort_index()  #we can see there are years in range of 1000 and also the future like 3000,9000 etc
+ sum(cars['yearOfRegistration'] > 2020)  # 24
+  sum(cars['yearOfRegistration'] <1950) # 38  #these two values can affect the model, so we are going to set the wprking range as 1950 - 2020
+
+#to view using scatter plot
+sns.regplot(x = 'yearOfRegistration',y = 'price',scatter = True,fit_reg = False, data = cars) #year of registration and price
+  
+#variable price
+price_count = cars['price'].value_counts().sort_index()  #we can see that price is 0 and 1. so we have to limit it.
+sns.distplot(cars['price'])  #since there are many observations with price 0,the graph shows like this.
+sns.boxplot(y = cars['price'])  #here we can't even see a box, just a line. this tells data has outliers.
+ sum(cars['price'] > 150000)  # 34
+ sum(cars['price'] < 100)  # 1748
+ # working range : 100 - 150000
+ 
+ #variable powerps
+ power_ps_count = cars['powerPS'].value_counts().sort_index() #We can see that 5533 records have a power 0 and power 19312 are all extreme values.
+ sns.distplot(cars['powerPS']) #power 0 has more values in it.
+ sns.boxplot(y=cars['powerPS']) #lots of outliers are present.
+ sum(cars['powerPS'] > 500)  # 115
+  sum(cars['powerPS'] < 10)  # 5565
+  #Working range : 10-500
+  
+#setting up the working range for data.
+cars = cars[
+        (cars.yearOfRegistration>=1950)&(cars.yearOfRegistration<=2018)
+        &(cars.price<=150000)&(cars.price>=100)
+        &(cars.powerPS<=500)&(cars.powerPS>=10)]     #now the record count is 42772. 
+
+
+#variable reduction
+cars['monthOfRegistration']/=12  
+
+#creating a new variable age by adding the year of registration and month of registration
+cars['Age'] = (2018 - cars['yearOfRegistration']) + cars['monthOfRegistration']  
+cars['Age'] = round(cars['Age'],2) #rouding off the decimal places to 2.
+cars['Age'].describe() #we can realise that data is not skewed.
+
+#dropping year of registration and month of registration to avoid redundancy
+cars = cars.drop(columns = ['yearOfRegistration','monthOfRegistration'], axis = 1)
+
+#visualising the parameters
+#age
+sns.distplot(cars['Age'])
+sns.boxplot(y=cars['Age'])  #we can clearly see a box though there are some extreme values above the whiskers.
+
+#price
+sns.distplot(cars['price'])
+sns.boxplot(y=cars['price'])
+
+#powerps
+sns.distplot(cars['powerPS'])
+sns.boxplot(y=cars['powerPS'])
+
+#visualizations against price
+#age vs price
+sns.regplot(x = 'Age',y='price',scatter = True, fit_reg = False, data = cars)
+# inference
+#    1. cars with higher price are newer.
+#    2. As age of the car increases, price decreases.
+
+#powerps vs price
+sns.regplot(x = 'powerPS',y='price',scatter = True, fit_reg = False, data = cars)
+#inference
+#    1. With increse in power, price increases.
+
+#@@@@@@@@@@@@@@@ for categorical variables @@@@@@@@@@@@@@@@2
+#variable seller
+seller_count = cars['seller'].value_counts()   # private and commercial
+
+pd.crosstab(cars['seller'],columns = 'count',normalize = True) #we can see that 100% only private, so this variable is insignificant
+sns.countplot(x ='seller',data = cars)
+
+#variable offertype
+cars['offerType'].value_counts()  #ONLY OFFER
+
+pd.crosstab(cars['offerType'],columns = 'count',normalize = True) # this variable is also insignificant.
+
+#variable abtest
+cars['abtest'].value_counts()  #2 categories --> test and control
+
+pd.crosstab(cars['abtest'],columns = 'count',normalize = True) # so we can see that 48% of control and 51% of test
+sns.countplot(x ='abtest',data = cars)#we can see there's an equal split between both. 
+sns.boxplot(x = 'abtest',y = 'price',data = cars) #there's nothing much that can be inferred bcos both seem to be the same, even the median value tend to be same.
+#does not affect price, so insignificant.
+
+#variable vehicle type
+cars['vehicleType'].value_counts()  #there are 8 categories
+
+ pd.crosstab(cars['vehicleType'],columns = 'count',normalize = True) #limousine, small car, station wagon have higher proportion than others.
+ sns.countplot(x ='vehicleType',data = cars)
+sns.boxplot(x = 'vehicleType',y = 'price',data = cars)  # we can see that price are different for different categories and so vehicle type does affect price.
+
+#variable gearbox
+cars['gearbox'].value_counts()   # manual and automatic.
+
+pd.crosstab(cars['gearbox'],columns = 'count',normalize = True) # automatic is 22% and manual is 77%
+sns.countplot(x ='gearbox',data = cars)
+sns.boxplot(x = 'gearbox',y = 'price',data = cars) #manual is priced lower than automatic. price varies accordingly so significant
+
+
+#variable model
+cars['model'].value_counts() # 247 types
+
+pd.crosstab(cars['model'],columns = 'count',normalize = True)   # significant
+
+
+#variable kilometer
+cars['kilometer'].value_counts()  # significant
+
+pd.crosstab(cars['kilometer'],columns = 'count',normalize = True)  #km corresponding to 150000 contributes to the maximum.
+
+sns.boxplot(x = 'kilometer',y = 'price',data = cars)  #cars which have gone for more kilometers come to a low price.
+
+
+#variable fueltype
+cars['fuelType'].value_counts() # 7 types
+
+pd.crosstab(cars['fuelType'],columns = 'count',normalize = True) # petrol contributes to 66%
+sns.countplot(x ='fuelType',data = cars)
+sns.boxplot(x = 'fuelType',y = 'price',data = cars) # we can see prices change accordingly, so significant.
+
+#variable brand
+cars['brand'].value_counts() # max is volkswagon followed by bmw
+
+sns.countplot(x ='brand',data = cars)
+sns.boxplot(x = 'brand',y = 'price',data = cars)  # very clear that they have an effect on price.
+
+#variable notRepairedDamage
+# yes - car is damaged but not rectified
+#no - car was damaged but has been rectified.
+
+cars['notRepairedDamage'].value_counts()
+
+pd.crosstab(cars['notRepairedDamage'],columns = 'count',normalize = True) # no is 90% ans yes is 10%
+sns.countplot(x ='notRepairedDamage',data = cars)
+sns.boxplot(x = 'notRepairedDamage',y = 'price',data = cars) # cars were damage hasn;t been rectified for low price and vice versa. hence, this variable is significant.
+
+
+@@@@@@@@@@@@@@@@ Removing insignificant variables @@@@@@@@@@
+col = ['seller','offerType','abtest']
+cars = cars.drop(columns = col, axis = 1)
+
+cars_copy = cars.copy()
+
+#correlation between numeric variables
+
+cars_numeric = cars.select_dtypes(exclude = "object")  #removing categorical variables
+correlation = cars_numeric.corr()
+round(correlation,3)
+
+cars_numeric.corr().loc[:,'price'].abs().sort_values(ascending = False)[1:] # we can see powerPS has the highest correlation
+
+
+@@@@@@@@@@@@ omitting missing values
+
+cars_omit = cars.dropna(axis = 0) # nearly 10,000 rows omitted
+
+# converting categorical variables to dummy variables
+cars_omit = pd.get_dummies(cars_omit,drop_first = True)
+
+#importing important libraries
+from sklearn.model_selection import train_test_split
+
+from sklearn.linear_model import LinearRegression
+
+from sklearn.ensemble import RandomForestRegressor
+
+from sklearn.metrics import mean_squared_error
+
+#####  model building with omitted data #############
+
+#SEPARATING INPUT AND OUTPUT FEATURES
+X1 = cars_omit.drop(['price'],axis = 1, inplace = False) #INPUT FEATURE
+
+Y1 = cars_omit['price']   #OUTPUT FEATURE
+
+#transforming price as logarithmic value 
+#since there are more records, natural log of price will be easy for calculation
+Y1 = np.log(Y1)
+
+#splitting data into train and test
+X_train,X_test,y_train,y_test = train_test_split(X1, Y1, test_size = 0.3, random_state = 3)
+
+print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
+
+#we can infer the split ratio like 
+23018/32884  # 0.699 = 70%
+9866/32884 # 0.300 = 30%
+
+#benchmark for comparison
+#base metric - predictor value - mean of test value
+base_pred = np.mean(y_test)
+print(base_pred)
+
+#repeating the same value till length of test data
+base_pred = np.repeat(base_pred,len(y_test))
+
+#finding RMSE
+base_root_mean_square_error = np.sqrt(mean_squared_error(y_test,base_pred))
+print(base_root_mean_square_error) # our predicting model should have rmse value less than 1.127
+
+@@@@@@@@ linear regression with omitted data @@@@@@@
+#setting intercept as true
+lrm = LinearRegression(fit_intercept = True)
+#model
+lr_model = lrm.fit(X_train,y_train)
+
+#predict the model on test set
+lr_predictions = lrm.predict(X_test)
+
+#COMPUTING MSE AND RMSE
+mrm_mse = mean_squared_error(y_test,lr_predictions)
+#rmse
+rmse = np.sqrt(mrm_mse)
+print(rmse)   # 0.5455
+
+# R-squared value
+rsquare_test = lr_model.score(X_test,y_test)
+rsquare_train = lr_model.score(X_train,y_train)
+print(rsquare_test,rsquare_train) # 0.765,  0.780
+
+#regression diagnostics - residual plot analysis
+residuals1 = y_test-lr_predictions
+sns.regplot(x=lr_predictions, y = residuals1,scatter = True, fit_reg = False ) #we can see all the values are near and in 0. So the actual and predicted values are the same.
+
+residuals1.describe()  # we can also note that mean is 0.00.
+
+
+@@@@@@@@@@@@ Random Forest model @@@@@@@@@@@
+#model parameters
+rf = RandomForestRegressor(n_estimators = 100, max_features = "auto", max_depth = 100, min_samples_split = 10,
+                          min_samples_leaf = 4, random_state = 1)
+rf_model = rf.fit(X_train,y_train)
+
+#predicting model on test set
+predi_rf = rf.predict(X_test)
+
+#compute mse and rmse
+rf_mse = mean_squared_error(y_test,predi_rf)
+rf_rmse = np.sqrt(rf_mse)
+print(rf_rmse)   #0.436
+
+#R-squared
+rsquare_test_rf = rf_model.score(X_test,y_test)
+rsquare_train_rf = rf_model.score(X_train,y_train)
+print(rsquare_test_rf,rsquare_train_rf) # 0.850, 0.92
+
+
+@@@@@@@@@@ model building with imputed data @@@@@@@@@
+
+cars_imputed = cars.apply(lambda x:x.fillna(x.median()) 
+                          if x.dtype == 'float' else  
+                          x.fillna(x.value_counts().index[0]))
+cars_imputed.isnull().sum()
+
+#convert categorical variables into dummy variables
+cars_imputed = pd.get_dummies(cars_imputed,drop_first = True)
+
+
+############ model building with imputed data ###############
+
+X2 = cars_imputed.drop(['price'],axis = 1, inplace = False) #INPUT FEATURE
+
+Y2 = cars_imputed['price']   #OUTPUT FEATURE
+
+#transforming price as logarithmic value
+Y2 = np.log(Y2)
+
+#Splitting the data into test and train
+X_train1,X_test1,y_train1,y_test1 = train_test_split(X2, Y2, test_size = 0.3, random_state = 3)
+
+print(X_train1.shape, X_test1.shape, y_train1.shape, y_test1.shape)
+
+
+#benchmark for comparison
+#base metric - predictor value - mean of test value
+base_pred1 = np.mean(y_test1)
+print(base_pred1)
+
+#repeating the same value till length of test data
+base_pred1 = np.repeat(base_pred1,len(y_test1))  # 8.06
+
+#finding RMSE
+base_root_mean_square_error1 = np.sqrt(mean_squared_error(y_test1,base_pred1))
+print(base_root_mean_square_error1) # our predicting model should have rmse value less than 1.188
+
+@@@@@@@@ linear regression with imputed data @@@@@@@
+#setting intercept as true
+lrm1 = LinearRegression(fit_intercept = True)
+#model
+lr_model1 = lrm1.fit(X_train1,y_train1)
+
+#predict the model on test set
+lr_predictions1 = lrm1.predict(X_test1)
+
+#COMPUTING MSE AND RMSE
+mrm_mse1 = mean_squared_error(y_test1,lr_predictions1)
+#rmse
+rmse1 = np.sqrt(mrm_mse1)
+print(rmse1)   # 0.648  # error has gone slightly up
+
+# R-squared value
+rsquare_test1 = lr_model1.score(X_test1,y_test1)
+rsquare_train1 = lr_model1.score(X_train1,y_train1)
+print(rsquare_test1,rsquare_train1) # 0.7023,  0.707
+
+#regression diagnostics - residual plot analysis
+residuals_imputed = y_test1-lr_predictions1
+sns.regplot(x=lr_predictions1, y = residuals_imputed,scatter = True, fit_reg = False ) #we can see all the values are near and in 0. So the actual and predicted values are the same.
+
+residuals_imputed.describe()  # we can also note that mean is 0.00.
+
+
+@@@@@@@@@@@@ Random Forest model with imputed data @@@@@@@@@@@
+#model parameters
+rf1 = RandomForestRegressor(n_estimators = 100, max_features = "auto", max_depth = 100, min_samples_split = 10,
+                          min_samples_leaf = 4, random_state = 1)
+rf_model1 = rf.fit(X_train1,y_train1)
+
+#predicting model on test set
+predi_rf1 = rf.predict(X_test1)
+
+#compute mse and rmse
+rf_mse1 = mean_squared_error(y_test1,predi_rf1)
+rf_rmse1 = np.sqrt(rf_mse1)
+print(rf_rmse1)   #0.494
+
+#R-squared
+rsquare_test_rf1 = rf_model1.score(X_test1,y_test1)
+rsquare_train_rf1 = rf_model1.score(X_train1,y_train1)
+print(rsquare_test_rf1,rsquare_train_rf1) # 0.820, 0.90
+
+
+
+
+
+
+
